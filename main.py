@@ -1,5 +1,7 @@
 from datetime import datetime
-import matplotlib as plt
+from enum import auto
+from unicodedata import decomposition
+import matplotlib.pyplot as plt
 import re
 
 import pandas as pd
@@ -7,18 +9,16 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from statsmodels.tsa.seasonal import seasonal_decompose
+from pmdarima.arima import auto_arima
 
-#open the sheet and set some columns to date
+
 df = pd.read_csv("covid_19_data.csv", parse_dates=["ObservationDate", "Last Update"])
 
-#rename all columns to get a default template
 df.columns = [re.sub(r"[/| ]", "", col).lower() for col in df.columns]
 
-#filtering just brazilian cases and plotting them
 df_br = df.loc[(df["countryregion"] == "Brazil") & (df["confirmed"] > 0)]
 fig = px.line(df_br, "observationdate", "confirmed", title="Casos Confirmados")
 
-#creating the column to show the growth rate everyday and putting in a graphic
 df_br["newcases"] = list(map(
     lambda x: 0 if (x==0) \
         else df_br["confirmed"].iloc[x] - df_br["confirmed"].iloc[x-1],
@@ -36,8 +36,7 @@ fig.add_trace(
 
 #fig.update_layout(title="Dies by Covid19 in Brazil").show()
 
-#growth rate function
-def g_rate(data, var, start=None, end=None):
+def total_growth(data, var, start=None, end=None):
     if start == None:
         start = data.observationdate.loc[data[var] > 0].min()
     else:
@@ -56,9 +55,8 @@ def g_rate(data, var, start=None, end=None):
     
     return rate*100
     
-t_growth = g_rate(df_br, "confirmed")
+t_growth = total_growth(df_br, "confirmed")
 
-#daily growth rate function
 def daily_growth(data, var, start=None):
     if start == None:
         start = data.observationdate.loc[data[var] > 0].min()
@@ -84,4 +82,28 @@ first_day = df_br.observationdate.loc[df_br.confirmed > 0].min()
 
 
 df_conf = df_br.confirmed
+df_conf.index = df_br.observationdate
 
+decomposition_result = seasonal_decompose(df_conf)
+
+fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(10,8))
+
+ax1.plot(decomposition_result.observed)
+ax2.plot(decomposition_result.trend)
+ax3.plot(decomposition_result.seasonal)
+ax4.plot(df_conf.index, decomposition_result.resid)
+ax4.axhline(0, linestyle="dashed", c="black")
+
+
+
+model = auto_arima(df_conf)
+
+graph = go.Figure(go.Scatter(x=df_conf.index, y=df_conf, name="Observed"))
+
+graph.add_trace(go.Scatter(x=df_conf.index, y=model.predict_in_sample(), name="Predicted"))
+
+graph.add_trace(go.Scatter(x=pd.date_range("2020-05-20", "2020-05-22"), y=model.predict(31), name="Forecast"))
+
+graph.update_layout(title="Futuresight to cases in the next 30 days")
+
+graph.show()
