@@ -8,8 +8,10 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from sklearn.model_selection import train_test_split
 from statsmodels.tsa.seasonal import seasonal_decompose
 from pmdarima.arima import auto_arima
+from prophet import Prophet
 
 
 df = pd.read_csv("covid_19_data.csv", parse_dates=["ObservationDate", "Last Update"])
@@ -106,4 +108,30 @@ graph.add_trace(go.Scatter(x=pd.date_range("2020-05-20", "2020-05-22"), y=model.
 
 graph.update_layout(title="Futuresight to cases in the next 30 days")
 
-graph.show()
+train = df_conf.reset_index()[:-5]
+
+test = df_conf.reset_index()[-5:]
+
+train.rename(columns={"observationdate": "ds", "confirmed": "y"}, inplace=True)
+test.rename(columns={"observationdate": "ds", "confirmed": "y"}, inplace=True)
+
+oracle = Prophet(growth="logistic", changepoints=["2020-03-21", "2020-03-30", "2020-04-25", 
+                                                "2020-05-03", "2020-05-10"])
+
+
+population = 217265543
+train["cap"] = population
+oracle.fit(train)
+
+future_dates = oracle.make_future_dataframe(periods=200)
+future_dates["cap"] = population
+forecast = oracle.predict(future_dates)
+
+ml = go.Figure()
+
+ml.add_trace(go.Scatter(x=forecast.ds, y=forecast.yhat, name="Prediction"))
+#ml.add_trace(go.Scatter(x=test.index, y=test, name="Observed - Test"))
+ml.add_trace(go.Scatter(x=train.ds, y=train.y, name="Observed - Train"))
+ml.update_layout(title="Prediction of Brazil's Confirmed Cases")
+
+ml.show()
